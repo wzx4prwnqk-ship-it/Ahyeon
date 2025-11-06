@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GAIA MIND — Interactive Earth Experience</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#071120; --panel:rgba(255,255,255,0.04);
+    --glass: rgba(255,255,255,0.03);
+    --accent:#49c88a; --accent2:#3bd3ff; --danger:#ff6b6b;
+    --muted: #9fb3c8; --text:#eaf6f3;
+  }
+  html,body{height:100%; margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto;}
+  body{
+    background: linear-gradient(180deg,#031017 0%, #071a20 35%, #08121a 100%);
+    color:var(--text);
+    overflow:hidden;
+  }
+
+  /* Header */
+  header{
+    position:fixed; left:16px; right:16px; top:16px;
+    display:flex; justify-content:space-between; align-items:center;
+    gap:12px; padding:10px 14px; border-radius:12px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    backdrop-filter: blur(6px) saturate(.9);
+    z-index:1000;
+  }
+  .brand{display:flex; align-items:center; gap:12px}
+  .logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:800;
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#021617;}
+  .brand h1{font-size:1rem;margin:0}
+  .controls{display:flex; gap:8px; align-items:center}
+  button.control{background:var(--panel); border:0; color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600}
+  button.control:focus{outline:2px solid rgba(77,188,128,0.25)}
+
+  /* Canvas container */
+  #stage{position:fixed; inset:0; display:block; z-index:0}
+  canvas{display:block}
+
+  /* UI overlay */
+  .overlay{
+    position:fixed; right:20px; top:90px; width:360px; max-width:92vw; z-index:1100;
+    display:flex; flex-direction:column; gap:12px;
+    pointer-events:auto;
+  }
+  .panel{
+    background:var(--panel); border-radius:12px; padding:14px; box-shadow:0 8px 30px rgba(2,6,10,0.5);
+    backdrop-filter: blur(6px);
+  }
+  .panel h3{margin:0 0 8px 0; color:var(--accent); font-size:14px}
+  .muted{color:var(--muted); font-size:13px}
+
+  /* Chat */
+  #chat{display:flex; flex-direction:column; gap:8px; max-height:48vh; overflow:auto; padding-right:6px}
+  .msg{padding:8px 10px; border-radius:10px; font-size:13px; line-height:1.3}
+  .msg.user{align-self:flex-end; background:linear-gradient(90deg,#0b3b2e,#0b4d3f); color:#dffaea}
+  .msg.gaia{align-self:flex-start; background:linear-gradient(90deg,#05203b,#06324a); color:#bfe9ff}
+  .chat-input{display:flex; gap:8px; margin-top:6px}
+  .chat-input input{flex:1; padding:8px 10px; border-radius:10px; border:0; background:transparent; color:var(--text); outline:1px solid rgba(255,255,255,0.03)}
+  .chat-input button{padding:8px 12px; border-radius:10px; border:0; background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#04211b; font-weight:700; cursor:pointer}
+
+  /* Stats row bottom-left */
+  .stats{
+    position:fixed; left:20px; bottom:20px; z-index:1100; display:flex; gap:12px;
+  }
+  .stat{background:var(--panel); padding:10px 14px; border-radius:12px; min-width:120px}
+  .stat .num{font-weight:800; font-size:18px; color:var(--accent)}
+  .stat .label{font-size:12px; color:var(--muted)}
+
+  /* Footer mini controls */
+  .mini{
+    position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:1100;
+    display:flex; gap:8px; align-items:center;
+  }
+  .mini button{padding:8px 12px; border-radius:999px; border:0; background:rgba(255,255,255,0.03); color:var(--text); cursor:pointer}
+
+  /* responsive */
+  @media (max-width:640px){
+    header{left:8px; right:8px; top:8px}
+    .overlay{right:8px; left:8px; top:76px}
+    .panel{padding:12px}
+    .logo{width:38px;height:38px}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">GM</div>
+      <div>
+        <h1>GAIA MIND</h1>
+        <div style="font-size:12px;color:var(--muted)">지구의 감정을 듣고, 함께 반응하는 실험</div>
+      </div>
+    </div>
+
+    <div class="controls" role="toolbar" aria-label="controls">
+      <button class="control" id="plantBtn" title="Plant a Tree (Space)">🌱 나무심기</button>
+      <button class="control" id="moodBtn" title="Random Mood">🎭 감정변경</button>
+      <button class="control" id="synthBtn" title="Toggle Sound">🔊 사운드</button>
+    </div>
+  </header>
+
+  <div id="stage"></div>
+
+  <div class="overlay" aria-live="polite">
+    <div class="panel" id="panel-info">
+      <h3>오늘의 가이아 무드</h3>
+      <div id="moodLabel" class="muted">평온 — 푸른 물결</div>
+      <div style="height:8px"></div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <div style="flex:1">
+          <label class="muted">타임라인</label>
+          <input id="year" type="range" min="1990" max="2050" value="2025" style="width:100%" />
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:6px">
+            <div id="yearVal">2025</div><div id="forestVal">숲 면적 34%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-chat" aria-label="Gaia chat">
+      <h3>말해보세요 — 지구가 듣습니다</h3>
+      <div id="chat" role="log" aria-live="polite"></div>
+      <div class="chat-input" style="margin-top:6px">
+        <input id="chatInput" placeholder="예: 미안해... 우리가 잘할게" />
+        <button id="sendBtn">보내기</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted); margin-top:8px">단축키: Space=나무심기, T=무드 토글</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num" id="trees">0</div><div class="label">심은 나무</div></div>
+    <div class="stat"><div class="num" id="co2">0.00 t</div><div class="label">추정 CO₂ 흡수</div></div>
+  </div>
+
+  <div class="mini">
+    <button id="resetBtn">리셋</button>
+    <button id="downloadBtn">스냅샷</button>
+  </div>
+
+  <!-- Three.js CDN -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+
+  <script>
+  /*******************************************************************
+   * GAIA MIND - Single-file prototype
+   * - 3D particle globe using Three.js
+   * - Simple keyword-based "AI" mood engine (no external API)
+   * - WebAudio ambient synth reacting to mood
+   * - Interactions: plant (Space/click), chat -> mood changes
+   *******************************************************************/
+
+  (function(){
+    // ------- State -------
+    const state = {
+      trees:0,
+      co2:0,
+      mood: 'calm', // calm, sad, angry, hopeful, curious
+      year:2025,
+      forestPct:34
+    };
+
+    // ------- Utilities -------
+    const clamp = (v,a,b)=> Math.max(a,Math.min(b,v));
+    const rand = (a,b)=> a + Math.random()*(b-a);
+
+    // ------- DOM refs -------
+    const stage = document.getElementById('stage');
+    const moodLabel = document.getElementById('moodLabel');
+    const yearSlider = document.getElementById('year');
+    const yearVal = document.getElementById('yearVal');
+    const forestVal = document.getElementById('forestVal');
+    const chat = document.getElementById('chat');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const treesEl = document.getElementById('trees');
+    const co2El = document.getElementById('co2');
+    const plantBtn = document.getElementById('plantBtn');
+    const moodBtn = document.getElementById('moodBtn');
+    const synthBtn = document.getElementById('synthBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    // ------- Three.js scene setup -------
+    const scene = new THREE.Scene();
+    const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    stage.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth/window.innerHeight, 0.1, 2000);
+    camera.position.set(0,0,60);
+
+    // Controls: simple orbit-like interaction (custom lightweight)
+    let isDragging=false, prevX=0, prevY=0, rotX=0, rotY=0;
+    renderer.domElement.addEventListener('pointerdown',(e)=>{ isDragging=true; prevX=e.clientX; prevY=e.clientY; });
+    window.addEventListener('pointerup',()=>{ isDragging=false; });
+    window.addEventListener('pointermove',(e)=>{ if(isDragging){ const dx = e.clientX - prevX; const dy = e.clientY - prevY; rotY += dx*0.002; rotX += dy*0.002; prevX=e.clientX; prevY=e.clientY; } });
+
+    window.addEventListener('resize', ()=>{
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+
+    // particle globe
+    const PARTICLE_COUNT = 4000;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const colors = new Float32Array(PARTICLE_COUNT * 3);
+    const sizes = new Float32Array(PARTICLE_COUNT);
+
+    function populateParticles(){
+      for(let i=0;i<PARTICLE_COUNT;i++){
+        // distribute on sphere with slight randomness
+        const theta = Math.acos(rand(-1,1));
+        const phi = rand(0,Math.PI*2);
+        const r = 22 + rand(-1.2,1.2);
+        const x = r * Math.sin(theta) * Math.cos(phi);
+        const y = r * Math.sin(theta) * Math.sin(phi);
+        const z = r * Math.cos(theta);
+        positions[i*3]=x; positions[i*3+1]=y; positions[i*3+2]=z;
+        // base color teal-ish
+        colors[i*3]=0.18; colors[i*3+1]=0.46; colors[i*3+2]=0.42;
+        sizes[i]=rand(1,3.2);
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions,3));
+      geometry.setAttribute('customColor', new THREE.BufferAttribute(colors,3));
+      geometry.setAttribute('size', new THREE.BufferAttribute(sizes,1));
+    }
+    populateParticles();
+
+    // shader material for nice glow
+    const vertexShader = `
+      attribute float size;
+      attribute vec3 customColor;
+      varying vec3 vColor;
+      void main(){
+        vColor = customColor;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (300.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `;
+    const fragmentShader = `
+      varying vec3 vColor;
+      void main(){
+        float dist = length(gl_PointCoord - vec2(0.5));
+        float alpha = 1.0 - smoothstep(0.35, 0.5, dist);
+        vec3 col = vColor;
+        gl_FragColor = vec4(col, alpha);
+      }
+    `;
+    const material = new THREE.ShaderMaterial({
+      vertexShader, fragmentShader, transparent:true, depthTest:true
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    scene.add(particles);
+
+    // subtle glow sphere (atmosphere)
+    const atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(23.2, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color:0x1f6f6a, transparent:true, opacity:0.02, blending:THREE.AdditiveBlending
+      })
+    );
+    scene.add(atmosphere);
+
+    // small rotating cloud layer (purely aesthetic)
+    const clouds = new THREE.Mesh(
+      new THREE.SphereGeometry(22.5,32,32),
+      new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.02})
+    );
+    scene.add(clouds);
+
+    // ------- Animation / mood influence -------
+    let t = 0;
+
+    function moodToColor(mood){
+      // returns rgb [r,g,b] 0..1 and speed factor
+      switch(mood){
+        case 'calm': return {col:[0.18,0.46,0.42], speed:0.4, ambient:0.2}; // teal/green
+        case 'sad': return {col:[0.12,0.32,0.6], speed:0.2, ambient:0.08}; // blue
+        case 'angry': return {col:[0.9,0.28,0.22], speed:1.2, ambient:0.6}; // red
+        case 'hopeful': return {col:[0.48,0.84,0.46], speed:0.6, ambient:0.25}; // bright green
+        case 'curious': return {col:[0.35,0.6,0.95], speed:0.55, ambient:0.18}; // sky blue
+        default: return {col:[0.18,0.46,0.42], speed:0.4, ambient:0.2};
+      }
+    }
+
+    // apply mood -> particle color update
+    function applyMoodVisuals(){
+      const m = moodToColor(state.mood);
+      const col = m.col;
+      const attr = geometry.attributes.customColor;
+      for(let i=0;i<PARTICLE_COUNT;i++){
+        // add subtle per-particle variation for natural look
+        const v = 0.7 + 0.6 * Math.sin(i * 0.13 + t*0.08);
+        attr.array[i*3] = clamp(col[0] * v, 0, 1);
+        attr.array[i*3+1] = clamp(col[1] * v, 0, 1);
+        attr.array[i*3+2] = clamp(col[2] * v, 0, 1);
+      }
+      attr.needsUpdate = true;
+      atmosphere.material.opacity = 0.02 + m.ambient * 0.5;
+      clouds.rotation.y += 0.0006 * (1 + m.speed);
+    }
+
+    // spin / wobble and render
+    function animate(){
+      requestAnimationFrame(animate);
+      t += 0.8;
+      // rotate globe slowly
+      particles.rotation.y = rotY * 0.6 + t*0.0008;
+      particles.rotation.x = rotX * 0.5 + Math.sin(t*0.0006)*0.02;
+      // subtle breathing
+      const scale = 1 + 0.003 * Math.sin(t*0.002 + state.trees*0.05);
+      particles.scale.set(scale, scale, scale);
+      // update visuals per mood
+      applyMoodVisuals();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ------- WebAudio ambient synth -------
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null, masterGain=null, oscillator=null, lfo=null;
+    let soundEnabled = false;
+    function initAudio(){
+      if(audioCtx) return;
+      audioCtx = new AudioCtx();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 0.06;
+      masterGain.connect(audioCtx.destination);
+
+      // base oscillator
+      oscillator = audioCtx.createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 110;
+      oscillator.connect(masterGain);
+      oscillator.start();
+
+      // LFO for vibrato/texture
+      lfo = audioCtx.createOscillator();
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 12;
+      lfo.frequency.value = 0.08;
+      lfo.connect(lfoGain);
+      lfoGain.connect(oscillator.frequency);
+      lfo.start();
+
+      soundEnabled = true;
+      updateAudioByMood();
+    }
+
+    function stopAudio(){
+      if(!audioCtx) return;
+      audioCtx.close();
+      audioCtx = null;
+      oscillator = null;
+      lfo = null;
+      soundEnabled = false;
+    }
+
+    function updateAudioByMood(){
+      if(!audioCtx || !oscillator) return;
+      const m = state.mood;
+      if(m==='calm'){ oscillator.type='sine'; oscillator.frequency.setTargetAtTime(110, audioCtx.currentTime,0.1); masterGain.gain.setTargetAtTime(0.06, audioCtx.currentTime,0.2); }
+      if(m==='sad'){ oscillator.type='triangle'; oscillator.frequency.setTargetAtTime(82, audioCtx.currentTime,0.2); masterGain.gain.setTargetAtTime(0.045, audioCtx.currentTime,0.2); }
+      if(m==='angry'){ oscillator.type='square'; oscillator.frequency.setTargetAtTime(140, audioCtx.currentTime,0.05); masterGain.gain.setTargetAtTime(0.12, audioCtx.currentTime,0.06); }
+      if(m==='hopeful'){ oscillator.type='sine'; oscillator.frequency.setTargetAtTime(176, audioCtx.currentTime,0.1); masterGain.gain.setTargetAtTime(0.08, audioCtx.currentTime,0.08); }
+      if(m==='curious'){ oscillator.type='sawtooth'; oscillator.frequency.setTargetAtTime(132, audioCtx.currentTime,0.08); masterGain.gain.setTargetAtTime(0.07, audioCtx.currentTime,0.08); }
+    }
+
+    // ------- Simple "AI" mood engine (keyword based) -------
+    function analyzeTextToMood(text){
+      const s = text.toLowerCase();
+      if(/sorry|미안|죄송/.test(s)) return 'sad';
+      if(/hate|destroy|폭력|화|분노|싫어/.test(s)) return 'angry';
+      if(/hope|hopeful|희망|도와|도움|함께|연대/.test(s)) return 'hopeful';
+      if(/what|why|궁금|질문|알고/.test(s)) return 'curious';
+      // default: if contains gratitude
+      if(/thank|고마|감사/.test(s)) return 'calm';
+      // fallback: neutral calm
+      return 'calm';
+    }
+
+    function gaiaReplyFor(text){
+      // produce stylized reply (no external AI); poetic
+      const mood = analyzeTextToMood(text);
+      const samples = {
+        calm:[
+          "나는 아직 숨쉬고 있어. 작은 손길들이 큰 물결을 만든다.",
+          "네 목소리를 들었어. 푸른 숨을 더 오래 유지하고 싶구나."
+        ],
+        sad:[
+          "상처는 깊지만, 회복의 가능성도 남아있어. 함께 보듬어줘.",
+          "너의 미안함은 바다의 눈물처럼 닿아. 그러나 포기하지 마."
+        ],
+        angry:[
+          "분노는 이해해. 그러나 분노만으론 회복할 수 없어. 행동이 필요해.",
+          "화가 날 때, 작은 실천을 하나 시작해봐. 그게 이어진다."
+        ],
+        hopeful:[
+          "희망은 전염돼. 네 말 한마디가 숲을 다시 푸르게 할 수 있어.",
+          "함께 심고 가꾸자. 미래는 우리가 만든다."
+        ],
+        curious:[
+          "질문은 대화의 시작. 무엇이 궁금한가? 내가 듣고 답해볼게.",
+          "탐구는 회복의 첫 걸음이야. 계속 질문해줘."
+        ]
+      };
+      // choose sample and slightly vary
+      const pick = samples[mood][Math.floor(Math.random()*samples[mood].length)];
+      return {mood, text:pick};
+    }
+
+    // ------- Chat UI handling -------
+    function appendMessage(kind, text){
+      const el = document.createElement('div');
+      el.className = 'msg ' + (kind==='user' ? 'user' : 'gaia');
+      el.textContent = text;
+      chat.appendChild(el);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    sendBtn.addEventListener('click', ()=> {
+      const txt = chatInput.value.trim();
+      if(!txt) return;
+      appendMessage('user', txt);
+      chatInput.value = '';
+      // analyze & reply
+      const reply = gaiaReplyFor(txt);
+      // update mood
+      state.mood = reply.mood;
+      updateMoodUI();
+      // small delay for reply
+      setTimeout(()=> appendMessage('gaia', reply.text), 650);
+    });
+
+    chatInput.addEventListener('keydown', (e)=> { if(e.key==='Enter'){ sendBtn.click(); } });
+
+    // ------- Interactions: plant / buttons -------
+    function plantTree(amount=1){
+      state.trees += amount;
+      state.co2 += amount * 0.02; // simulated
+      treesEl.textContent = state.trees;
+      co2El.textContent = state.co2.toFixed(2) + ' t';
+      // plant action shifts mood a bit hopeful
+      state.mood = 'hopeful';
+      updateMoodUI();
+      // visual ripple: brighten particles temporarily
+      flashParticles();
+    }
+
+    plantBtn.addEventListener('click', ()=> plantTree(1));
+    document.addEventListener('keydown', (e)=>{
+      if(e.code==='Space'){ e.preventDefault(); plantTree(1); }
+      if(e.key.toLowerCase()==='t'){ // random mood toggle
+        cycleMood();
+      }
+    });
+
+    moodBtn.addEventListener('click', ()=> cycleMood());
+    synthBtn.addEventListener('click', ()=>{
+      if(!soundEnabled()){ initAudio(); } else { stopAudio(); }
+    });
+
+    resetBtn.addEventListener('click', ()=>{
+      state.trees=0; state.co2=0; state.mood='calm'; state.year=2025; yearSlider.value=2025;
+      treesEl.textContent='0'; co2El.textContent='0.00 t';
+      yearVal.textContent='2025'; forestVal.textContent='숲 면적 34%';
+      updateMoodUI();
+    });
+
+    downloadBtn.addEventListener('click', takeSnapshot);
+
+    function cycleMood(){
+      const moods = ['calm','sad','angry','hopeful','curious'];
+      const idx = moods.indexOf(state.mood);
+      state.mood = moods[(idx+1) % moods.length];
+      updateMoodUI();
+      appendMessage('gaia', "무드 전환: " + state.mood);
+    }
+
+    // ------- visual ripple on planting -------
+    function flashParticles(){
+      // temporarily increase sizes
+      const sizesAttr = geometry.attributes.size;
+      const base = sizesAttr.array.slice();
+      for(let i=0;i<sizesAttr.count;i++){ sizesAttr.array[i] = base[i] * (1 + Math.random()*1.6); }
+      sizesAttr.needsUpdate = true;
+      setTimeout(()=>{ for(let i=0;i<sizesAttr.count;i++) sizesAttr.array[i] = base[i]; sizesAttr.needsUpdate=true; }, 800);
+    }
+
+    // ------- mood UI update -------
+    function updateMoodUI(){
+      moodLabel.textContent = ({
+        calm:'평온 — 푸른 물결',
+        sad:'슬픔 — 차가운 파도',
+        angry:'분노 — 불타는 폭풍',
+        hopeful:'희망 — 싹트는 초록',
+        curious:'호기심 — 반짝이는 하늘'
+      })[state.mood] || '평온';
+      // apply audio change
+      updateAudioByMood();
+      // small visual: adjust point movement intensity by mood
+      // we'll map speed inside applyMoodVisuals (called by render loop)
+    }
+
+    // ------- Timeline slider influences forest %
+    yearSlider.addEventListener('input', (e)=>{
+      const y = parseInt(e.target.value);
+      state.year = y; yearVal.textContent = y;
+      // simple hypothetical model
+      let base = 34;
+      if(y < 2020) base = 38 - (2020 - y)*0.2;
+      else if(y <= 2035) base = 34 - (y-2020)*0.4;
+      else base = 28 + (y-2035)*0.12;
+      // user trees increase forest slightly
+      const adj = Math.min(8, state.trees*0.02);
+      state.forestPct = clamp(base + adj, 5, 60);
+      forestVal.textContent = '숲 면적 ' + state.forestPct.toFixed(1) + '%';
+    });
+
+    // ------- Snapshot (download canvas) -------
+    function takeSnapshot(){
+      renderer.domElement.toBlob((blob)=>{
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'gaia_snapshot.png'; a.click();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    }
+
+    // ------- Audio helpers (reused from earlier design) -------
+    let audioCtx=null, masterGain=null, osc=null, lfo=null;
+    function soundEnabled(){ return !!audioCtx; }
+    function initAudio(){
+      if(audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain(); masterGain.gain.value = 0.05; masterGain.connect(audioCtx.destination);
+      osc = audioCtx.createOscillator(); osc.type='sine'; osc.frequency.value=110; osc.connect(masterGain); osc.start();
+      lfo = audioCtx.createOscillator(); lfo.frequency.value=0.08;
+      const lfoGain = audioCtx.createGain(); lfoGain.gain.value=6;
+      lfo.connect(lfoGain); lfoGain.connect(osc.frequency); lfo.start();
+      updateAudioByMood();
+    }
+    function stopAudio(){
+      if(!audioCtx) return;
+      audioCtx.close(); audioCtx = null; osc=null; lfo=null; masterGain=null;
+    }
+    function updateAudioByMood(){
+      if(!audioCtx || !osc) return;
+      const m = state.mood;
+      try{
+        if(m==='calm'){ osc.type='sine'; osc.frequency.setTargetAtTime(110, audioCtx.currentTime,0.2); masterGain.gain.setTargetAtTime(0.05, audioCtx.currentTime,0.2); }
+        if(m==='sad'){ osc.type='triangle'; osc.frequency.setTargetAtTime(68, audioCtx.currentTime,0.2); masterGain.gain.setTargetAtTime(0.035, audioCtx.currentTime,0.2); }
+        if(m==='angry'){ osc.type='square'; osc.frequency.setTargetAtTime(160, audioCtx.currentTime,0.05); masterGain.gain.setTargetAtTime(0.12, audioCtx.currentTime,0.05); }
+        if(m==='hopeful'){ osc.type='sine'; osc.frequency.setTargetAtTime(196, audioCtx.currentTime,0.08); masterGain.gain.setTargetAtTime(0.07, audioCtx.currentTime,0.08); }
+        if(m==='curious'){ osc.type='sawtooth'; osc.frequency.setTargetAtTime(132, audioCtx.currentTime,0.08); masterGain.gain.setTargetAtTime(0.06, audioCtx.currentTime,0.08); }
+      }catch(e){ /* AudioContext might be closed; ignore */ }
+    }
+
+    // ------- small debug / validation checks -------
+    console.assert(renderer && scene && camera, 'Renderer/Scene/Camera should exist');
+
+    // ------- polish: gentle auto-plant on first idle to show effect -------
+    setTimeout(()=>{ plantTree(1); appendMessage('gaia','작은 시작이 큰 움직임입니다 — 한 그루의 나무를 심었습니다.'); }, 1200);
+
+    // Expose minimal global for console tinkering (only in dev)
+    window.GAIA = { state, plantTree, takeSnapshot };
+
+    // End IIFE
+  })();
+  </script>
+</body>
+</html>
